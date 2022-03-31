@@ -1,7 +1,7 @@
 // City Life RPG
 require daslib/media
-options debugger            // uncomment for debug in VS Code
-require daslib/debug        // uncomment for debug in VS Code
+// options debugger            // uncomment for debug in VS Code
+// require daslib/debug        // uncomment for debug in VS Code
 require option
 require objects
 
@@ -11,10 +11,12 @@ require objects
 var
     // ents: array<Ent>
     uis: array<UIElement>
+    // texts: array<TextCmp>
     characters: array<Character> // structs use arrays of int to connect to structs of other type
     tileexts: array<TileExt> // so these arrays must be updated for each struct
     items: array<Item> // so don't remove or add something too much and no too much structs
     actions: array<Action> // or how else can we solve this?
+    nobjects: array<NaturalObject>
     translated_coord: array<float2>
     map_offset: float2
     map_offset_speed: float = 1./640.
@@ -39,7 +41,7 @@ struct DateTime
 struct Transform2dCmp
     pos: float2
     rot: float
-    scale: float2
+    scale: float2 = float2(1)
     // gc_dummy : lambda           // this is here so that GC can find real representation of data
 
 let D_Transform2d <- [[Transform2dCmp pos = float2(0, 0), rot = 0., scale = float2(1, 1)]]
@@ -82,19 +84,31 @@ def init_d_meshdata()
         push(D_MeshData.indexes, i)
         i++
         tri = i/9
-    print("{D_MeshData.coord}\n")
+    print("D_MeshData.coord: {D_MeshData.coord}\n")
 
 def init_background()
     sky_gradient <- create_image(2, 2, [{uint[] make_color(0.3, 0.5, 0.1);  make_color(0.3, 0.5, 0.1);
                                                 make_color(0.0, 0.22, 0.1); make_color(0.0, 0.22, 0.1)}])
     sky_gradient |> set_image_smooth(true)
 
+def tri_area(x1: float; y1: float; x2: float; y2: float; x3: float; y3: float): float
+    return abs((x1*(y2-y3) + x2*(y3-y1)+ x3*(y1-y2))/2.0)
+
+def tri_intersect(x1: float; y1: float; x2: float; y2: float; x3: float; y3: float; pos: float2)
+    var A = tri_area (x1, y1, x2, y2, x3, y3)
+    var A1 = tri_area (pos[0], pos[1], x2, y2, x3, y3)
+    var A2 = tri_area (x1, y1, pos[0], pos[1], x3, y3)
+    var A3 = tri_area (x1, y1, x2, y2, pos[0], pos[1])
+    return abs(A-A1-A2-A3) < 10e-10
 
 def mesh_intersect(points: array<float2>; pos: float2)
-    var inside = true
     // here check if point is inside mesh
-    
-    return inside
+    var i: int = 0
+    while i < length(points) - 2
+        if tri_intersect(points[i][0], points[i][1], points[i+1][0], points[i+1][1], points[i+2][0], points[i+2][1], pos)
+            return true
+        i++
+    return false
 
 
 
@@ -103,16 +117,14 @@ def create_mesh()
     // var _texcoord: array<float2>
     // var _colors: array<uint>
     // var _indices: array<int>
-    for i in range(length(uis))
-        print("uis\n")
-        if(uis[i].MeshData.enabled)
-            uis[i].MeshData.coordOff = length(coord)
-            // for _i in range(length(ents[i].MeshData.coord))
-            print("uis\n")
-            push(coord, uis[i].MeshData.coord)
-            push(uv, uis[i].MeshData.uv)
-            push(colors, uis[i].MeshData.colors)
+
     // add character, map meshes or use other function?
+    for i in range(length(characters))
+        if characters[i].MeshData.enabled
+            characters[i].MeshData.coordOff = length(coord)
+            push(coord, characters[i].MeshData.coord)
+            push(uv, characters[i].MeshData.uv)
+            push(colors, characters[i].MeshData.colors)
     
     // here creating tiles
     print("map: {map}\n")
@@ -156,6 +168,15 @@ def create_mesh()
         panic("colors and coord length aren't equal\n")
     // mesh <- create_mesh_triangles(_coord, _texcoord, _colors, _indices)
     // print("why it doen't generate anything? {create_mesh_triangles(_coord, _texcoord, _colors, _indices)}\n")
+    for i in range(length(uis))
+        print("uis\n")
+        if uis[i].MeshData.enabled
+            uis[i].MeshData.coordOff = length(coord)
+            // for _i in range(length(ents[i].MeshData.coord))
+            print("uis\n")
+            push(coord, uis[i].MeshData.coord)
+            push(uv, uis[i].MeshData.uv)
+            push(colors, uis[i].MeshData.colors)
 
 def generate_tile_geometry(quad: float2[4] const): float2[16]
     var _coord: float2[16]
@@ -219,18 +240,30 @@ def press(pos: float2)
 // text component
 // it will be used to keep data needed by text render system
 struct TextCmp
+    // id: int
+    active: bool = true
     text: string = "default text"
     color: uint = 0x000000FF
+    pos: float2 = float2(50,30)
 
-var D_Text <- [[TextCmp text = "default text"]]
+var D_Text <- [[TextCmp active = true, text = "default text", color = 0x000000FF]]
 
 // def draw_texts()
-    // for i in range(length(texts))
-    //     if(((texts[i].active))
-    //         text_out(texts[i].ent.Transform2d.pos[0], texts[i].ent.Transform2d.pos[1], texts[i].Text.text, texts[i].Text.color)
+//     for i in range(length(texts))
+//         if texts[i].active
+//             text_out(texts[i].pos[0], texts[i].pos[1], texts[i].text, texts[i].color)
 
-
-
+def draw_character_stats(id: int)
+    if id < length(characters)
+        text_out(10., 10., "name {characters[id].name}", 0xffffffff)
+        text_out(10., 30., "age {characters[id].age}", 0xffffffff)
+        text_out(10., 50., "gender {characters[id].gender}", 0xffffffff)
+        text_out(10., 70., "abilities {characters[id].abilities}", 0xffffffff)
+        text_out(10., 90., "skills {characters[id].skills}", 0xffffffff)
+        text_out(10., 110., "needs {characters[id].needs}", 0xffffffff)
+        text_out(10., 130., "action points {characters[id].action_points}", 0xffffffff)
+        text_out(10., 150., "move points {characters[id].move_points}", 0xffffffff)
+        
 def init_cmp
     init_d_meshdata()
     init_background()
@@ -244,6 +277,18 @@ struct Skills
     walking: int
     driving: int
     // TODO
+
+struct Abilities
+    strength: int = 10
+    agility: int = 10
+    talking: int = 10
+    short_term_memory: int = 10
+    work_term_memory: int = 10
+    long_term_memory: int = 10
+    creativity: int = 10
+    focus: int = 10
+    willpower: int = 10
+    endurance: int = 10
 
 // range from 0 to 10
 struct Needs
@@ -263,22 +308,28 @@ struct Needs
 struct Character
     id: int = 5
     name: string
-    age: int
+    age: float = 5.0
     gender: Gender
     skills: Skills
+    abilities: Abilities
     needs: Needs
     inventory: array<int>
+    tid: int // map tile below character
     action_points: int = 1
     move_points: int
-    actions: int[1] = [[int[1] 0]] // array of action ids in action array because we need to store them in db and send over net
-    // MeshData: MeshDataCmp <- [[MeshDataCmp]]
+    actions: array<int> // array of action ids in action array because we need to store them in db and send over net
+    MeshData: MeshDataCmp <- D_MeshData
     // rect
     // texture maybe?
     // animation states maybe?
     // functions maybe?
-    Transform2d: Transform2dCmp <- [[Transform2dCmp]]
+    Transform2d: Transform2dCmp <- Transform2dCmp()
 
 def nothing()
+    print("\nERROR: nothing invoked\n")
+    return
+def te_nothing(gteid: int; tid: int; teid: int)
+    print("\nERROR: nothing invoked\n")
     return
 
 // is it needed?
@@ -333,21 +384,21 @@ struct Item
     userid: int // id of character in characters array
     // item functions use Items and Characters and Tiles as inputs
     // so 
-    begin_turn = @@nothing
-    end_turn = @@nothing
-    use = @@nothing
-    // on_drop = @@nothing
-    // on_pick = @@nothing
-    // on_break = @@nothing
+    begin_turn: int
+    end_turn: int
+    use: int
+    // on_drop: int
+    // on_pick: int
+    // on_break: int
     dropped: bool = true
 
-// these items can only be used by tile
+// these items can only be used by tile, currently unused
 struct TileItem
     name: string
     pic: Image
-    begin_turn = @@nothing
-    end_turn = @@nothing
-    use = @@nothing
+    begin_turn: int
+    end_turn: int
+    use: int
 
 struct ItemModifier
     // modifiers modify properties of item
@@ -370,10 +421,11 @@ def throw_dice(action: Action)
     characters[action.characters[0]].move_points = urandom([[int[3] action.characters[0]; D_mapgen.seed; gp.turn.number]])
 var D_dice <- [[Item id = 6, name = "dice"]]
 
-struct Deck
-    name: string
-    size: int
-    cards: array<int> //or array of cards? currently Item
+// struct Deck
+//     name: string //saved in table
+//     max_size: int
+//     cards: array<int>
+// decks add complexity
 
     // TODO
 enum Gender
@@ -402,10 +454,12 @@ struct UIElement
     Button: ButtonCmp <- [[ButtonCmp]]
     // Text: TextCmp&
 
-def draw_uis()
-    text_out(10, 10, "{gp.turn.time}", 0xff00ff65)
+// this not needed
+// def draw_uis()
+    // text_out(10, 10, "{gp.turn.time}", 0xff00ff65)
     // for uie in uis
-        // create geometry
+        // why?
+    
 
 // map stuff
 
@@ -413,20 +467,26 @@ var map_coordOff: int // where tiles coords are saved in mesh, tile extensions a
 
 struct NaturalObject
     MeshData: MeshDataCmp <- [[MeshDataCmp]]
-    
+    //animation = @@
+
+def bend_pines()
+// update coords of each tree to make it move on wind
+    return
 
 // tiles
 
 struct Tile
-    id: int // id in map array
+    tid: int // id in map array
     connections: int[4]
     corners: float2[4]
     // coordOff of tiles is calculated from map because tiles have 12 vertices and they are packed together
     characters: array<int>
-    exts: array<int>
+    exts: array<int> // why not ids? Ah, because of functions we need ids!
 
 // tile specials
 struct TileExt
+    tid: int // id of tile in map array
+    teid: int // id of ext in exts
     image: Image
     // tile can have many extensions
     // and extensions can create combinations
@@ -435,8 +495,51 @@ struct TileExt
     // serialization exists for such cases
     // Then I need to (de)convert structures to graph somehow.
     // 
-    // deck: array<Item> 
-    on_step = @@nothing // or play card from deck
+    // decks: table<string; Deck> // using decks to create tile functions is interesting, but complex
+    step_schedule: array<int> // 0 item will be used on each turn and moved to end
+    turn_schedule: array<int> //
+    containing_items: array<int>
+    on_step = @@te_default_proc // proc to call each on character step in
+    turn = @@te_default_proc // proc to call each turn
+
+def play_top_card_on_turn(gteid: int; tid: int; teid: int)
+    // do action from top card, then move it to bottom of deck
+    var _prevcard = tileexts[map[tid].exts[teid]].turn_schedule[0] // accessing by id is quite complex here
+    var _proc = actions[items[tileexts[map[tid].exts[teid]].turn_schedule[0]].use].proc
+    // characters, items data must be updated in move action
+    invoke(_proc,actions[items[tileexts[map[tid].exts[teid]].turn_schedule[0]].use])
+    // check if item didn't move or exhaust
+    if tileexts[map[tid].exts[teid]].turn_schedule[0] == _prevcard
+        push(tileexts[map[tid].exts[teid]].turn_schedule, tileexts[map[tid].exts[teid]].turn_schedule[0])
+        erase(tileexts[map[tid].exts[teid]].turn_schedule, 0)
+
+def play_top_card_on_step(gteid: int; tid: int; teid: int /*why no pointers? there are, but idk*/)
+    // do action from top card, then move it to bottom of deck
+    var _prevcard = tileexts[map[tid].exts[teid]].step_schedule[0]
+    var _proc = actions[items[tileexts[map[tid].exts[teid]].step_schedule[0]].use].proc
+    // characters, items data must be updated in move action
+    invoke(_proc,actions[items[tileexts[map[tid].exts[teid]].step_schedule[0]].use])
+    // check if item didn't move or exhaust
+    if tileexts[map[tid].exts[teid]].turn_schedule[0] == _prevcard
+        push(tileexts[map[tid].exts[teid]].step_schedule, tileexts[map[tid].exts[teid]].step_schedule[0])
+        erase(tileexts[map[tid].exts[teid]].step_schedule, 0)
+
+def te_default_proc(gteid: int; tid: int; teid: int)
+    if length(tileexts[map[tid].exts[teid]].turn_schedule) != 0
+        play_top_card_on_turn(gteid, tid, teid)
+    if length(tileexts[map[tid].exts[teid]].step_schedule) != 0
+        play_top_card_on_step(gteid, tid, teid)
+    print(" tid")
+
+def te_start(gteid: int; tid: int; teid: int)
+    // get data from game init struct
+    // or use random values for characters
+    spawn_character(0)
+    print("\nGame started\n")
+    tileexts[gteid].turn = @@te_nothing
+var start_tileext: TileExt <- [[TileExt image <- create_image("images/start_300-500x300.gif"), turn = @@te_start]]
+
+
 
 var start_tile: Tile <- [[Tile corners = [[float2[4] float2(0.,0.); float2(20.,0.); float2( 20.,20.); float2(0.,20.)]]]]
 
@@ -455,18 +558,65 @@ struct Mapgen
 var D_mapgen = Mapgen()
 def default_map_generator()
     // print("\nTODO: generate map\n")
-    var _tile := start_tile
-
-    push_clone(map, _tile)
+    var teid = 0
+    resize(tileexts, teid+1)
+    tileexts[teid] := start_tileext
+    var tid = 0
+    resize(map, tid+1)
+    map[tid] := start_tile
+    push(map[tid].exts, teid)
+    tid++
+    
     // var sz = length(map)
-    // resize(map, sz+1)
+    // 
 
     // d_mg_add_tile(_tile)
 
-// def d_mg_add_tile()
+def d_mg_add_tile(ontile: int)
+    var tid = length(map)
+    resize(map, tid+1)
+    map[tid].tid = tid
+    map[tid].connections[0]
+    // get side
+    // set common vertices
+    for i in range(4)
+        // set remaining vertices
+        map[tid].corners[i]
+    // add exts for buildings, or for road event
+    // map[tid].exts = tid
+    
+
 
 
 // gameplay stuff
+
+struct GameInit
+    characters: array<Character>
+    actions_per_turn: int
+    // moves_per_turn
+    // max_moves_per_turn
+    time_scale: float
+    // 
+
+var ginit: GameInit
+
+def game_init()
+    // create characters
+    var cnt = 3
+    for c in range(cnt)
+        var _chara <- Character()
+        _chara.id = c
+        
+        push_clone(ginit.characters, _chara)
+    // set global values
+
+struct FinishStats
+    turn: int
+    id: int
+
+struct GameResults
+    finishers: array<FinishStats>
+    
 
 enum TurnState
     start // run functions on start of turn
@@ -476,7 +626,7 @@ enum TurnState
     ending // waiting for all end routines, like data to save/load
 
 struct GameTurn
-    timeout: float = 10.0
+    timeout: float = 1.0
     starting_timeout: float = 0.1 
     time: float
     number: int = 0
@@ -484,6 +634,8 @@ struct GameTurn
 
 struct GamePlay
     turn = GameTurn()
+    selected_character: int
+    time_scale: float = 10000.
 var gp = GamePlay()
 
 
@@ -496,20 +648,27 @@ def turn_end()
         // so we let each character to act, but not during game_turn()
         // so here we run action from chara action array,
         // then remove it
-        if chara.action_points > 0
+        if chara.action_points > 0 && length(chara.actions) > 0
             var _a <- actions[chara.actions[0]]
             print("{_a}")
             chara.action_points--
+        chara.age += 0.000000003168809 * gp.time_scale
 
     // perform map actions
-    
+    for gteid in range(length(tileexts))
+        print("{tileexts}")
+        let tid = tileexts[gteid].tid
+        let teid = tileexts[gteid].teid
+        if tileexts[map[tid].exts[teid]].turn != null && tileexts[map[tid].exts[teid]].turn != @@te_nothing
+            invoke(tileexts[map[tid].exts[teid]].turn, gteid, tid, teid)
     // perform game actions
     
 def turn_start()
     for chara in characters
         chara.action_points = 1
     print("\n{urandom([[int[3] 1; D_mapgen.seed; gp.turn.number]])}\n")
-    print("characters: {characters}\n")
+    // print("characters: {characters}\n")
+
 
 // TODO: we need to get options for game
 def create_game()
@@ -517,18 +676,41 @@ def create_game()
     default_map_generator()
     
     // create characters
-    
-    // TODO: replace this with actual spawning on start tile
+def spawn_character(tid: int)
     var _chara <- [[Character name = "Void"]]
+    _chara.id = length(characters)
     _chara.skills.conversation = 10
     var _dice := D_dice
     var isz = length(items)
+    var csz = length(characters)
+    // TODO: spawn item proc to add action to actions
+    var _action <- [[Action]]
+    push(_action.characters, csz)
+    push(_action.items, isz)
+    var asz = length(actions)
+    _action.proc = @@throw_dice
+    push_clone(actions, _action)
+    _dice.use = asz
     push_clone(items, _dice)
     push(_chara.inventory, isz)
-    var sz = length(characters)
-    resize(characters, sz+1)
-    characters[sz] <- _chara
-    push(map[0].characters, sz)
+    _chara.tid = tid
+    // add character to mesh
+    _chara.MeshData.coordOff = length(coord)
+    // generate geometry
+    let corners = 6
+    let _color = 0x000000ff + 0xff000000 * uint(urandom([[int[3] _chara.id; _chara.id; _chara.id]]))
+    // for v in range(corners)
+    _chara.MeshData := D_MeshData // TODO generate playing chip
+    for i in _chara.MeshData.coord
+        push(coord, i)
+    for i in _chara.MeshData.uv
+        push(uv, i)
+    for i in _chara.MeshData.colors
+        push(colors, (i+_color)/2u)
+    resize(characters, csz+1)
+    characters[csz] := _chara
+    push(map[0].characters, csz)
+    print("spawned {_chara.name}")
 
 // 'initialize' runs once when game starts and every hot-reload
 [export]
@@ -541,8 +723,7 @@ def initialize
     //create_mesh called after init of objects
     create_mesh()
 
-    init_background()
-
+    init_cmp()
     // print("mesh {mesh}\n")
     print("uv {uv}")
     set_pixel(image2, 0,0,make_color(0.1, 0.2, 0.4))
@@ -561,6 +742,9 @@ def act(dt: float)
         map_scale += float2(get_mouse_scroll_delta()*map_scale_speed)
         map_offset += get_mouse_velocity()*map_offset_speed
         translated_coord <- translate(coord, map_offset, map_scale)
+    if get_mouse_button(MB_LEFT)
+        press(get_mouse_position())
+
     // gp.turn.time += dt
     // if gp.turn.time > gp.turn.timeout
     //     print("{gp.turn.timeout}")
@@ -609,11 +793,11 @@ var
 def draw
     sky_gradient |> draw_image(0.0, 0.0, make_color(1.0),
         float2(get_screen_width(), get_screen_height() * 4 / 5))
-    // press(get_mouse_position())
     //draw_mesh(mesh, get_mouse_position()[0], get_mouse_position()[1], 0., 1.)
     draw_triangle_strip(image, translated_coord, uv, colors)
     // draw_triangle_strip(image2, coord2, uv2, colors2)
-    draw_uis()
+    // draw_texts() // case-specific draw instead, which is slow, but easy
+    draw_character_stats(gp.selected_character)
     return
 
 def mod(x: float; y: float): float
@@ -621,3 +805,13 @@ def mod(x: float; y: float): float
 
 def mod(x: int; y: int; steps: int): int
     return x - y * int(floor(float(x*steps) / float(y*steps)))
+
+def line_line_intersection(p1: float2; p2: float2; p3: float2; p4: float2): float2
+    var d = (p2[0] - p1[0]) * (p4[1] - p3[1]) - (p2[1] - p1[1]) * (p4[0] - p3[0])
+    if d <= 0.00000000000000001 && d >= -0.00000000000000001
+        return float2(0.) //false
+    var u = ((p3[0] - p1[0]) * (p4[1] - p3[1]) - (p3[1] - p1[1]) * (p4[0] - p3[0])) / d
+    var v = ((p3[0] - p1[0]) * (p2[1] - p1[1]) - (p3[1] - p1[1]) * (p2[0] - p1[0])) / d
+    if u < 0.0f || u > 1.0f || v < 0.0f || v > 1.0f
+        return float2(0.) //false;
+    return float2(p1[0] + u * (p2[0] - p1[0]), p1[1] + u * (p2[1] - p1[1]))
